@@ -129,8 +129,10 @@ static void coffee_level(dl_matrix3du_t *image_matrix, boolean draw_only = true)
 
     int x, y, w, h, i;
     float send_value;
+    float coffee_exists_level;
+    int coffee_exists = 1;
     uint32_t color_green = COLOR_GREEN;
-    uint32_t color_red = COLOR_GREEN;
+    uint32_t color_red = COLOR_RED;
     fb_data_t fb;
     fb.width = image_matrix->w;
     fb.height = image_matrix->h;
@@ -141,10 +143,15 @@ static void coffee_level(dl_matrix3du_t *image_matrix, boolean draw_only = true)
     int h_avg = 0;
     int h_last = 0;
     int h_values[fb.height]; 
-    int min_line_y = abs((float)fb.height / 100 * EEPROM.read(24)/*Max*/ - fb.height);
-    int max_line_y = abs((float)fb.height / 100 * EEPROM.read(25)/*Min*/ - fb.height);
+    int min_line_y = abs((float)fb.height / 100 * EEPROM.read(24)/*Min*/ - fb.height);
+    int max_line_y = abs((float)fb.height / 100 * EEPROM.read(25)/*Max*/ - fb.height);
     int left_line_x = (float)fb.width / 100 * EEPROM.read(26)/*Left*/;
     int right_line_x = (float)fb.width / 100 * EEPROM.read(27)/*Right*/;
+    int coffee_exists_x = (float)fb.width / 100 * EEPROM.read(21)/*Coffee Exists X*/;
+    int coffee_exists_y = (float)fb.height / 100 * EEPROM.read(22)/*Coffee Exists Y*/;
+    int coffee_exists_threshold = EEPROM.read(8)/*Coffee Exists Threshold*/;
+
+    int vflip = EEPROM.read(11)/*VFlip*/;
     
     for(int i = 0; i < fb.height; i++){
 
@@ -178,10 +185,16 @@ static void coffee_level(dl_matrix3du_t *image_matrix, boolean draw_only = true)
       }
       
     }
+    
+    send_value = abs(( (float)(h_max - max_line_y) / (float)(min_line_y - max_line_y) * 100) -100 );
 
+    coffee_exists_level = *(fb.data + coffee_exists_y*fb.width*fb.bytes_per_pixel + coffee_exists_x*fb.bytes_per_pixel);
 
-
-    send_value = (float)(h_max - max_line_y) / (float)(min_line_y - max_line_y) * 100;
+    if(coffee_exists_level > coffee_exists_threshold){
+      coffee_exists = 0;
+    }
+    
+    
     String str_send_value = (String)send_value;
     
     if(draw_only == true){
@@ -190,13 +203,19 @@ static void coffee_level(dl_matrix3du_t *image_matrix, boolean draw_only = true)
       y = h_max;
       w = fb.width;
       h = fb.height;
-      
-      fb_gfx_drawFastHLine(&fb, x, min_line_y, w, color_green);
-      fb_gfx_drawFastHLine(&fb, x, max_line_y, w, color_green);
-      fb_gfx_drawFastVLine(&fb, left_line_x, 0, h, color_green);
-      fb_gfx_drawFastVLine(&fb, right_line_x, 0, h, color_green);
 
-      fb_gfx_fillRect(&fb, x, y, 30, 5, color_green);  
+      fb_gfx_drawFastHLine(&fb, x, min_line_y, w, color_green); //Min Line
+      fb_gfx_drawFastHLine(&fb, x, max_line_y, w, color_green); //Max Line
+      fb_gfx_drawFastVLine(&fb, left_line_x, 0, h, color_green); //Left Line
+      fb_gfx_drawFastVLine(&fb, right_line_x, 0, h, color_green); //Right Line
+
+      if(coffee_exists == 1){
+        fb_gfx_fillRect(&fb, coffee_exists_x-2, coffee_exists_x, 3, 3, color_green);  //Coffee Pot Exists Marker
+      }else{
+        fb_gfx_fillRect(&fb, coffee_exists_x, coffee_exists_x, 3, 3, color_red);  //Coffee Pot Exists Marker
+      }
+
+      fb_gfx_fillRect(&fb, x, y, 30, 5, color_green);  //Coffee Level Marker
 
       if(EEPROM.read(18)/*Text*/ == true){
         fb_gfx_print(&fb, 40, y-10, color_green, &str_send_value[0]);
@@ -206,7 +225,7 @@ static void coffee_level(dl_matrix3du_t *image_matrix, boolean draw_only = true)
       //Serial.println( send_value );
 
       int httpCode = 0;
-      http.begin("http://php-alnino200534546.codeanyapp.com/coffee/api.php?value=" + (String)send_value + "&cups=" + (String)EEPROM.read(17)/*Cups*/ + "&pot_id=" + (String)EEPROM.read(20)/*PotID*/); //HTTP
+      http.begin("http://php-alnino200534546.codeanyapp.com/coffee/api.php?value=" + (String)send_value + "&cups=" + (String)EEPROM.read(17)/*Cups*/ + "&pot_id=" + (String)EEPROM.read(20)/*PotID*/ + "&exists=" + coffee_exists); //HTTP
       httpCode = http.GET(); 
       
       if (httpCode > 0) { //Check for the returning code
@@ -216,6 +235,7 @@ static void coffee_level(dl_matrix3du_t *image_matrix, boolean draw_only = true)
         Serial.println("Level: " + (String)payload);
         Serial.println("Cups: " + (String)EEPROM.read(17)/*Cups*/);
         Serial.println("Pot ID: " + (String)EEPROM.read(20)/*PotID*/);
+        Serial.println("Coffee Exists: " + (String)coffee_exists);
  
       }else {
             Serial.println("Error on HTTP request");
@@ -625,10 +645,10 @@ static esp_err_t cmd_handler(httpd_req_t *req){
       EEPROM.write(7, val);
       res = s->set_whitebal(s, val);
     }
-    else if(!strcmp(variable, "agc")){
+    /*else if(!strcmp(variable, "agc")){
       EEPROM.write(8, val);
       res = s->set_gain_ctrl(s, val);
-    }
+    }*/
     else if(!strcmp(variable, "aec")){
       EEPROM.write(9, val);
       res = s->set_exposure_ctrl(s, val);
@@ -676,7 +696,7 @@ static esp_err_t cmd_handler(httpd_req_t *req){
     else if(!strcmp(variable, "lenc")){
       EEPROM.write(20, val);
       res = s->set_lenc(s, val);
-    }*/
+    }
     else if(!strcmp(variable, "special_effect")){
       EEPROM.write(21, val);
       res = s->set_special_effect(s, val);
@@ -684,17 +704,17 @@ static esp_err_t cmd_handler(httpd_req_t *req){
     else if(!strcmp(variable, "wb_mode")){
       EEPROM.write(22, val);
       res = s->set_wb_mode(s, val);
-    }
+    }*/
     else if(!strcmp(variable, "ae_level")){
       EEPROM.write(23, val);
       res = s->set_ae_level(s, val);
     }
 
     //Coffee Settings
-    else if(!strcmp(variable, "coffee_max")){
+    else if(!strcmp(variable, "coffee_min")){
       EEPROM.write(24, val);
     }
-    else if(!strcmp(variable, "coffee_min")){
+    else if(!strcmp(variable, "coffee_max")){
       EEPROM.write(25, val);
     }
     else if(!strcmp(variable, "coffee_left")){
@@ -714,6 +734,15 @@ static esp_err_t cmd_handler(httpd_req_t *req){
     }
     else if(!strcmp(variable, "coffee_potid")){
       EEPROM.write(20, val);
+    }
+    else if(!strcmp(variable, "coffee_exists_x")){
+      EEPROM.write(21, val);
+    }
+    else if(!strcmp(variable, "coffee_exists_y")){
+      EEPROM.write(22, val);
+    }
+    else if(!strcmp(variable, "coffee_exists_threshold")){
+      EEPROM.write(8, val);
     }
     /*else if(!strcmp(variable, "face_detect")) {
         detection_enabled = val;
@@ -744,15 +773,15 @@ static esp_err_t status_handler(httpd_req_t *req){
     p+=sprintf(p, "\"brightness\":%d,", s->status.brightness);
     p+=sprintf(p, "\"contrast\":%d,", s->status.contrast);
     p+=sprintf(p, "\"saturation\":%d,", s->status.saturation);
-    p+=sprintf(p, "\"special_effect\":%u,", s->status.special_effect);
-    p+=sprintf(p, "\"wb_mode\":%u,", s->status.wb_mode);
+    //p+=sprintf(p, "\"special_effect\":%u,", s->status.special_effect);
+    //p+=sprintf(p, "\"wb_mode\":%u,", s->status.wb_mode);
     p+=sprintf(p, "\"awb\":%u,", s->status.awb);
     p+=sprintf(p, "\"awb_gain\":%u,", s->status.awb_gain);
     p+=sprintf(p, "\"aec\":%u,", s->status.aec);
     p+=sprintf(p, "\"aec2\":%u,", s->status.aec2);
     p+=sprintf(p, "\"ae_level\":%d,", s->status.ae_level);
     p+=sprintf(p, "\"aec_value\":%u,", s->status.aec_value);
-    p+=sprintf(p, "\"agc\":%u,", s->status.agc);
+    //p+=sprintf(p, "\"agc\":%u,", s->status.agc);
     p+=sprintf(p, "\"agc_gain\":%u,", s->status.agc_gain);
     p+=sprintf(p, "\"gainceiling\":%u,", s->status.gainceiling);
     p+=sprintf(p, "\"bpc\":%u,", s->status.bpc);
@@ -770,7 +799,10 @@ static esp_err_t status_handler(httpd_req_t *req){
     p+=sprintf(p, "\"coffee_cups\":%u,",    EEPROM.read(17)/*Cups*/);
     p+=sprintf(p, "\"coffee_text\":%u,",    EEPROM.read(18)/*Text*/);
     p+=sprintf(p, "\"coffee_obscure\":%u,", EEPROM.read(19)/*Obscure*/);
-    p+=sprintf(p, "\"coffee_potid\":%u",    EEPROM.read(20)/*Pot ID*/);
+    p+=sprintf(p, "\"coffee_potid\":%u, ",    EEPROM.read(20)/*Pot ID*/);
+    p+=sprintf(p, "\"coffee_exists_x\":%u, ", EEPROM.read(21)/*Coffee Exists X*/);
+    p+=sprintf(p, "\"coffee_exists_y\":%u, ", EEPROM.read(22)/*Coffee Exists Y*/);
+    p+=sprintf(p, "\"coffee_exists_threshold\":%u", EEPROM.read(8)/*Coffee Exists Threshold*/);
     *p++ = '}';
     *p++ = 0;
     httpd_resp_set_type(req, "application/json");
