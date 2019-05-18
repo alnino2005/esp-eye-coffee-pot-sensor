@@ -31,7 +31,7 @@ HTTPClient http;
 #define ENROLL_CONFIRM_TIMES 5
 
 #define COLOR_GREEN  0x0000FF00
-#define COLOR_RED  0x00FF3034
+#define COLOR_RED  0x000000FF
 
 boolean startup = true;
 
@@ -185,15 +185,15 @@ static void coffee_level(dl_matrix3du_t *image_matrix, boolean draw_only = true)
       }
       
     }
-    
-    send_value = abs(( (float)(h_max - max_line_y) / (float)(min_line_y - max_line_y) * 100) -100 );
 
     coffee_exists_level = *(fb.data + coffee_exists_y*fb.width*fb.bytes_per_pixel + coffee_exists_x*fb.bytes_per_pixel);
+
+    send_value = abs(( (float)(h_max - max_line_y) / (float)(min_line_y - max_line_y) * 100) -100 );
+
 
     if(coffee_exists_level > coffee_exists_threshold){
       coffee_exists = 0;
     }
-    
     
     String str_send_value = (String)send_value;
     
@@ -210,9 +210,9 @@ static void coffee_level(dl_matrix3du_t *image_matrix, boolean draw_only = true)
       fb_gfx_drawFastVLine(&fb, right_line_x, 0, h, color_green); //Right Line
 
       if(coffee_exists == 1){
-        fb_gfx_fillRect(&fb, coffee_exists_x-2, coffee_exists_x, 3, 3, color_green);  //Coffee Pot Exists Marker
+        fb_gfx_fillRect(&fb, coffee_exists_x-5, coffee_exists_x-5, 10, 10, color_green);  //Coffee Pot Exists Marker
       }else{
-        fb_gfx_fillRect(&fb, coffee_exists_x, coffee_exists_x, 3, 3, color_red);  //Coffee Pot Exists Marker
+        fb_gfx_fillRect(&fb, coffee_exists_x-5, coffee_exists_x-5, 10, 10, color_red);  //Coffee Pot Exists Marker
       }
 
       fb_gfx_fillRect(&fb, x, y, 30, 5, color_green);  //Coffee Level Marker
@@ -222,28 +222,43 @@ static void coffee_level(dl_matrix3du_t *image_matrix, boolean draw_only = true)
       }
       
     }else{
-      //Serial.println( send_value );
+      Serial.println("-------------------------------------------");
 
-      int httpCode = 0;
-      http.begin("http://php-alnino200534546.codeanyapp.com/coffee/api.php?value=" + (String)send_value + "&cups=" + (String)EEPROM.read(17)/*Cups*/ + "&pot_id=" + (String)EEPROM.read(20)/*PotID*/ + "&exists=" + coffee_exists); //HTTP
-      httpCode = http.GET(); 
-      
-      if (httpCode > 0) { //Check for the returning code
- 
-        String payload = http.getString();
-        Serial.println("Response: " + (String)httpCode);
-        Serial.println("Level: " + (String)payload);
-        Serial.println("Cups: " + (String)EEPROM.read(17)/*Cups*/);
-        Serial.println("Pot ID: " + (String)EEPROM.read(20)/*PotID*/);
-        Serial.println("Coffee Exists: " + (String)coffee_exists);
- 
-      }else {
-            Serial.println("Error on HTTP request");
+      if(coffee_exists && send_value > 0 && send_value < 100){ //Make sure the vertical measurement is within the max and min bounds
+        //Serial.println( send_value );
+        String address = "http://php-alnino200534546.codeanyapp.com/coffee/api.php?value=" + (String)send_value + "&cups=" + (String)EEPROM.read(17)/*Cups*/ + "&pot_id=" + (String)EEPROM.read(20)/*PotID*/ + "&exists=" + coffee_exists;
+  
+        int httpCode = 0;
+        http.begin(address); //HTTP
+        httpCode = http.GET();
+
+        if (httpCode > 0) { //Check for the returning code
+   
+          String payload = http.getString();
+          Serial.println("Address: " + address);
+          Serial.println("Response: " + (String)httpCode);
+          Serial.println("Level: " + (String)payload);
+          Serial.println("Cups: " + (String)EEPROM.read(17)/*Cups*/);
+          Serial.println("Pot ID: " + (String)EEPROM.read(20)/*PotID*/);
+          Serial.println("Coffee Exists: " + (String)coffee_exists);
+   
+        }else {
+              Serial.println("Error on HTTP request");
+        }
+        
+      }else{
+          Serial.println("Outside bounds: " + (String)send_value);
+          Serial.println("Coffee Exists: " + (String)coffee_exists);
       }
+        
+      
+
 
       http.end(); //Free the resources
 
-    }
+    }      
+    
+
 
     
 
